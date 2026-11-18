@@ -34,7 +34,7 @@ data class SmsConfig(val enabled: Boolean = false, val rules: List<SmsRule> = em
 data class ForwardEvent(val ruleName: String, val sender: String, val status: String, val timestamp: Long)
 
 object SmsConfigStore {
-    private const val KEY_ALIAS = "sms_otp_forwarder_settings_v2"
+    private const val KEY_ALIAS = "sms_otp_forwarder_settings_v1"
     private const val PREFS = "otp_forwarder_secure"
     private const val CONFIG_KEY = "encrypted_config"
     private const val HISTORY_PREFS = "otp_forwarder_history"
@@ -174,6 +174,10 @@ object SmsConfigStore {
             .setRandomizedEncryptionRequired(true).build())
         return generator.generateKey()
     }
+
+    fun encryptPayload(value: String): String = encrypt(value)
+
+    fun decryptPayload(value: String): String = decrypt(value)
 
     private fun encrypt(value: String): String {
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
