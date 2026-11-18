@@ -2,19 +2,16 @@ package com.whizkris.smsreader
 
 import android.Manifest
 import android.content.pm.PackageManager
-import android.database.Cursor
-import android.net.Uri
 import android.os.Bundle
-import android.provider.Telephony
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Security
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -23,211 +20,180 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
-
-data class SmsMessage(
-    val sender: String,
-    val body: String,
-    val date: Long
-)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent {
-            SmsReaderScreen()
-        }
+        setContent { OtpForwarderScreen() }
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SmsReaderScreen() {
+private fun OtpForwarderScreen() {
     val context = LocalContext.current
+    var config by remember { mutableStateOf(SmsConfigStore.load(context)) }
+    var destination by remember { mutableStateOf(config.destination) }
+    var senders by remember { mutableStateOf(config.allowedSenders.joinToString("\n")) }
+    var includes by remember { mutableStateOf(config.includeKeywords.joinToString("\n")) }
+    var excludes by remember { mutableStateOf(config.excludeKeywords.joinToString("\n")) }
+    var history by remember { mutableStateOf(SmsConfigStore.history(context)) }
+    var savedMessage by remember { mutableStateOf<String?>(null) }
 
-    var messages by remember { mutableStateOf(emptyList<SmsMessage>()) }
-    var hasPermission by remember {
+    fun permissionGranted(permission: String) =
+        ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
+
+    var permissionsOk by remember {
         mutableStateOf(
-            ContextCompat.checkSelfPermission(
-                context,
-                Manifest.permission.READ_SMS
-            ) == PackageManager.PERMISSION_GRANTED
+            permissionGranted(Manifest.permission.RECEIVE_SMS) &&
+                permissionGranted(Manifest.permission.SEND_SMS)
         )
     }
 
-    var errorMessage by remember { mutableStateOf<String?>(null) }
-
-    fun loadMessages() {
-        if (!hasPermission) return
-
-        try {
-            val result = mutableListOf<SmsMessage>()
-            val uri: Uri = Telephony.Sms.Inbox.CONTENT_URI
-
-            val cursor: Cursor? = context.contentResolver.query(
-                uri,
-                arrayOf("address", "body", "date"),
-                null,
-                null,
-                "date DESC"
-            )
-
-            cursor?.use {
-                val addressIndex = it.getColumnIndex("address")
-                val bodyIndex = it.getColumnIndex("body")
-                val dateIndex = it.getColumnIndex("date")
-
-                while (it.moveToNext()) {
-                    result.add(
-                        SmsMessage(
-                            sender = it.getString(addressIndex) ?: "Unknown",
-                            body = it.getString(bodyIndex) ?: "",
-                            date = it.getLong(dateIndex)
-                        )
-                    )
-                }
-            }
-
-            messages = result
-            errorMessage = null
-        } catch (e: Exception) {
-            errorMessage = "Unable to read messages: ${e.message}"
-        }
-    }
-
     val permissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        hasPermission = granted
-        if (granted) loadMessages()
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) {
+        permissionsOk = permissionGranted(Manifest.permission.RECEIVE_SMS) &&
+            permissionGranted(Manifest.permission.SEND_SMS)
     }
 
-    LaunchedEffect(hasPermission) {
-        if (hasPermission) loadMessages()
-    }
-
-    MaterialTheme {
-        Scaffold(
-            topBar = {
-                TopAppBar(
-                    title = {
-                        Text(
-                            "SMS Reader",
-                            fontWeight = FontWeight.Bold
-                        )
-                    },
-                    actions = {
-                        IconButton(
-                            onClick = { loadMessages() },
-                            enabled = hasPermission
-                        ) {
-                            Icon(
-                                Icons.Default.Refresh,
-                                contentDescription = "Refresh"
-                            )
-                        }
-                    }
-                )
-            }
-        ) { padding ->
-
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .padding(16.dp)
-            ) {
-
-                Text(
-                    text = if (hasPermission)
-                        "${messages.size} messages"
-                    else
-                        "SMS access required",
-                    style = MaterialTheme.typography.titleMedium
-                )
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                if (!hasPermission) {
-                    Text(
-                        "Allow SMS access to display messages stored in your phone's inbox."
-                    )
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    Button(
-                        onClick = {
-                            permissionLauncher.launch(Manifest.permission.READ_SMS)
-                        }
-                    ) {
-                        Text("Grant SMS Permission")
-                    }
-
-                } else if (messages.isEmpty()) {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text("No SMS messages found.")
-                    }
-
-                } else {
-                    LazyColumn(
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        items(messages) { message ->
-                            SmsCard(message)
-                        }
-                    }
-                }
-
-                errorMessage?.let {
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Text(
-                        text = it,
-                        color = MaterialTheme.colorScheme.error
-                    )
-                }
-            }
+    fun saveSettings(enable: Boolean = config.enabled) {
+        val updated = SmsConfig(
+            enabled = enable,
+            destination = destination.trim(),
+            allowedSenders = senders.lines().map { it.trim() }.filter { it.isNotBlank() }.distinct(),
+            includeKeywords = includes.lines().map { it.trim() }.filter { it.isNotBlank() }.distinct(),
+            excludeKeywords = excludes.lines().map { it.trim() }.filter { it.isNotBlank() }.distinct()
+        )
+        val validation = SmsConfigStore.validate(updated)
+        if (validation != null) {
+            savedMessage = validation
+            return
+        }
+        try {
+            SmsConfigStore.save(context, updated)
+            config = updated
+            savedMessage = "Settings saved on this device."
+        } catch (e: Exception) {
+            savedMessage = "Could not securely save settings: ${e.message ?: "unknown error"}"
         }
     }
-}
 
-@Composable
-fun SmsCard(message: SmsMessage) {
-    val formattedDate = remember(message.date) {
-        SimpleDateFormat(
-            "dd MMM yyyy, hh:mm a",
-            Locale.getDefault()
-        ).format(Date(message.date))
-    }
-
-    ElevatedCard(
-        modifier = Modifier.fillMaxWidth()
-    ) {
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    Column {
+                        Text("OTP Forwarder", fontWeight = FontWeight.Bold)
+                        Text("Forward only approved OTP messages", style = MaterialTheme.typography.labelSmall)
+                    }
+                },
+                actions = {
+                    Icon(Icons.Default.Security, contentDescription = "On-device security",
+                        modifier = Modifier.padding(end = 16.dp))
+                }
+            )
+        }
+    ) { padding ->
         Column(
-            modifier = Modifier.padding(16.dp)
+            modifier = Modifier.fillMaxSize().padding(padding)
+                .verticalScroll(rememberScrollState()).padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            Text(
-                text = message.sender,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
+            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Forwarding control", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(if (config.enabled) "Forwarding is ON" else "Forwarding is OFF",
+                                fontWeight = FontWeight.SemiBold)
+                            Text("Only messages matching every required rule can be forwarded.",
+                                style = MaterialTheme.typography.bodySmall)
+                        }
+                        Switch(
+                            checked = config.enabled,
+                            onCheckedChange = { enabled ->
+                                saveSettings(enable = enabled)
+                            },
+                            enabled = permissionsOk
+                        )
+                    }
+                    if (!permissionsOk) {
+                        Text("SMS permissions are required to receive and send the selected messages.",
+                            color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                        Button(onClick = {
+                            permissionLauncher.launch(arrayOf(
+                                Manifest.permission.RECEIVE_SMS,
+                                Manifest.permission.SEND_SMS
+                            ))
+                        }) { Text("Grant SMS permissions") }
+                    }
+                }
+            }
+
+            Text("Forwarding destination", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            OutlinedTextField(
+                value = destination, onValueChange = { destination = it },
+                modifier = Modifier.fillMaxWidth(), singleLine = true,
+                label = { Text("Wife's mobile number") },
+                placeholder = { Text("+91XXXXXXXXXX") }
             )
 
-            Spacer(modifier = Modifier.height(6.dp))
-
-            Text(
-                text = message.body,
-                style = MaterialTheme.typography.bodyMedium
+            Text("Allowed senders", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text("Required. Add the exact sender IDs or phone numbers that are permitted to send OTPs. One per line.",
+                style = MaterialTheme.typography.bodySmall)
+            OutlinedTextField(
+                value = senders, onValueChange = { senders = it },
+                modifier = Modifier.fillMaxWidth(), minLines = 2,
+                placeholder = { Text("AD-BANKXX\nVM-LOGIN") }
             )
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Text("Include keywords", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text("Required. At least one keyword must appear in the SMS. One per line.",
+                style = MaterialTheme.typography.bodySmall)
+            OutlinedTextField(
+                value = includes, onValueChange = { includes = it },
+                modifier = Modifier.fillMaxWidth(), minLines = 2,
+                placeholder = { Text("OTP\nverification code\none time password") }
+            )
+
+            Text("Exclude keywords (optional)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text("If any excluded keyword appears, the SMS will not be forwarded.",
+                style = MaterialTheme.typography.bodySmall)
+            OutlinedTextField(
+                value = excludes, onValueChange = { excludes = it },
+                modifier = Modifier.fillMaxWidth(), minLines = 2,
+                placeholder = { Text("transaction alert\nbalance") }
+            )
+
+            Button(onClick = { saveSettings() }, modifier = Modifier.fillMaxWidth()) {
+                Text("Save settings")
+            }
+            savedMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall,
+                color = if (it.startsWith("Settings saved")) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error) }
+
+            HorizontalDivider()
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Recent forwarding activity", style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                TextButton(onClick = { history = SmsConfigStore.history(context) }) { Text("Refresh") }
+            }
+            if (history.isEmpty()) {
+                Text("No forwarding activity yet.", style = MaterialTheme.typography.bodySmall)
+            } else {
+                history.forEach { item ->
+                    ListItem(
+                        headlineContent = { Text(item.sender) },
+                        supportingContent = { Text(item.status) },
+                        trailingContent = { Text(SmsConfigStore.formatTime(item.timestamp), style = MaterialTheme.typography.labelSmall) }
+                    )
+                    HorizontalDivider()
+                }
+            }
 
             Text(
-                text = formattedDate,
-                style = MaterialTheme.typography.labelSmall,
+                "Privacy and safety: SMS OTPs are authentication credentials. Keep the sender list narrow and forward only messages you are authorised to share. Activity history stores sender, time and result—not the OTP text. SMS delivery by the mobile network is not guaranteed.",
+                style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.secondary
             )
         }
