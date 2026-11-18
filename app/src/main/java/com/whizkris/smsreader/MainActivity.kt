@@ -65,7 +65,7 @@ private fun OtpForwarderScreen() {
             includeKeywords = includes.lines().map { it.trim() }.filter { it.isNotBlank() }.distinct(),
             excludeKeywords = excludes.lines().map { it.trim() }.filter { it.isNotBlank() }.distinct()
         )
-        val validation = SmsConfigStore.validate(updated)
+        val validation = if (enable) SmsConfigStore.validate(updated) else null
         if (validation != null) {
             savedMessage = validation
             return
