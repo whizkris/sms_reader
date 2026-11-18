@@ -13,6 +13,7 @@ class WebhookWorker(context: Context, params: WorkerParameters) : Worker(context
         val encrypted = inputData.getString(KEY_PAYLOAD) ?: return Result.failure()
         return try {
             val config = SmsConfigStore.load(applicationContext)
+            if (!config.enabled) return Result.success()
             val rule = config.rules.firstOrNull { it.id == ruleId && it.enabled && it.sendWebhook }
                 ?: return Result.success()
             val payload = JSONObject(SmsConfigStore.decryptPayload(encrypted))
@@ -20,6 +21,7 @@ class WebhookWorker(context: Context, params: WorkerParameters) : Worker(context
             val timestamp = payload.optLong("receivedAt")
             val connection = (URL(rule.webhookUrl).openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"
+                instanceFollowRedirects = false
                 connectTimeout = 15000
                 readTimeout = 15000
                 doOutput = true
