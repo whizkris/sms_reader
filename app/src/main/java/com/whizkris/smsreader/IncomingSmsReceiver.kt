@@ -8,10 +8,16 @@ import android.content.pm.PackageManager
 import android.telephony.SmsManager
 import android.provider.Telephony
 import androidx.core.content.ContextCompat
+import androidx.work.BackoffPolicy
+import androidx.work.Constraints
+import androidx.work.Data
+import androidx.work.ExistingWorkPolicy
+import androidx.work.NetworkType
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
 import org.json.JSONObject
-import java.net.HttpURLConnection
-import java.net.URL
 import java.security.MessageDigest
+import java.util.concurrent.TimeUnit
 
 class IncomingSmsReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
@@ -30,45 +36,37 @@ class IncomingSmsReceiver : BroadcastReceiver() {
         val matchingRules = config.rules.filter { SmsRuleMatcher.matches(it, sender, body) }
         if (matchingRules.isEmpty()) return
 
-        val digest = MessageDigest.getInstance("SHA-256")
+        val fingerprint = MessageDigest.getInstance("SHA-256")
             .digest("$sender|$body|$timestamp".toByteArray())
             .joinToString("") { "%02x".format(it) }
-        if (SmsConfigStore.isDuplicate(context, digest)) return
+        if (SmsConfigStore.isDuplicate(context, fingerprint)) return
 
-        val appContext = context.applicationContext
-        val pending = goAsync()
-        Thread {
-            try {
-                matchingRules.forEach { rule ->
-                    val outcomes = mutableListOf<String>()
-                    if (rule.sendSms) {
-                        if (ContextCompat.checkSelfPermission(appContext, Manifest.permission.SEND_SMS) != PackageManager.PERMISSION_GRANTED) {
-                            outcomes += "SMS permission missing"
-                        } else {
-                            rule.smsDestinations.forEach { number ->
-                                try {
-                                    sendSms(appContext, number, "Message from $sender:\n$body")
-                                    outcomes += "SMS submitted to ${maskNumber(number)}"
-                                } catch (e: Exception) {
-                                    outcomes += "SMS failed (${e.javaClass.simpleName})"
-                                }
-                            }
-                        }
-                    }
-                    if (rule.sendWebhook) {
+        matchingRules.forEach { rule ->
+            if (rule.sendSms) {
+                if (ContextCompat.checkSelfPermission(context, Manifest.permission.SEND_SMS) != PackageManager.PERMISSION_GRANTED) {
+                    SmsConfigStore.addEvent(context, rule.name, sender, "SMS permission missing", timestamp)
+                } else {
+                    rule.smsDestinations.forEach { number ->
                         try {
-                            val code = postWebhook(rule, sender, body, timestamp)
-                            outcomes += "Webhook HTTP $code"
+                            sendSms(context, number, "Message from $sender:\n$body")
+                            SmsConfigStore.addEvent(context, rule.name, sender,
+                                "SMS submitted to ${maskNumber(number)}", timestamp)
                         } catch (e: Exception) {
-                            outcomes += "Webhook failed (${e.javaClass.simpleName})"
+                            SmsConfigStore.addEvent(context, rule.name, sender,
+                                "SMS failed (${e.javaClass.simpleName})", timestamp)
                         }
                     }
-                    SmsConfigStore.addEvent(appContext, rule.name, sender, outcomes.joinToString("; "), timestamp)
                 }
-            } finally {
-                pending.finish()
             }
-        }.start()
+            if (rule.sendWebhook) {
+                try {
+                    enqueueWebhook(context, rule, sender, body, timestamp, fingerprint)
+                } catch (e: Exception) {
+                    SmsConfigStore.addEvent(context, rule.name, sender,
+                        "Webhook queue failed (${e.javaClass.simpleName})", timestamp)
+                }
+            }
+        }
     }
 
     private fun sendSms(context: Context, number: String, text: String) {
@@ -78,28 +76,28 @@ class IncomingSmsReceiver : BroadcastReceiver() {
         else manager.sendTextMessage(number, null, text, null, null)
     }
 
-    private fun postWebhook(rule: SmsRule, sender: String, body: String, timestamp: Long): Int {
-        val connection = (URL(rule.webhookUrl).openConnection() as HttpURLConnection).apply {
-            requestMethod = "POST"
-            connectTimeout = 10000
-            readTimeout = 10000
-            doOutput = true
-            setRequestProperty("Content-Type", "application/json; charset=utf-8")
-            setRequestProperty("Accept", "application/json")
-            rule.webhookHeaders.forEach { (key, value) -> setRequestProperty(key, value) }
-        }
-        return try {
-            val payload = JSONObject()
-                .put("ruleId", rule.id)
-                .put("ruleName", rule.name)
-                .put("sender", sender)
-                .put("message", body)
-                .put("receivedAt", timestamp)
-            connection.outputStream.use { it.write(payload.toString().toByteArray(Charsets.UTF_8)) }
-            connection.responseCode
-        } finally {
-            connection.disconnect()
-        }
+    private fun enqueueWebhook(
+        context: Context, rule: SmsRule, sender: String, body: String, timestamp: Long, fingerprint: String
+    ) {
+        val payload = JSONObject()
+            .put("ruleId", rule.id)
+            .put("ruleName", rule.name)
+            .put("sender", sender)
+            .put("message", body)
+            .put("receivedAt", timestamp)
+        val encrypted = SmsConfigStore.encryptPayload(payload.toString())
+        val data = Data.Builder()
+            .putString(WebhookWorker.KEY_RULE_ID, rule.id)
+            .putString(WebhookWorker.KEY_PAYLOAD, encrypted)
+            .build()
+        val request = OneTimeWorkRequestBuilder<WebhookWorker>()
+            .setInputData(data)
+            .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
+            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
+            .build()
+        WorkManager.getInstance(context).enqueueUniqueWork(
+            "sms-webhook-${rule.id}-$fingerprint", ExistingWorkPolicy.KEEP, request
+        )
     }
 
     private fun maskNumber(number: String): String =
