@@ -33,6 +33,7 @@ class MainActivity : ComponentActivity() {
 private fun OtpForwarderScreen() {
     val context = LocalContext.current
     var config by remember { mutableStateOf(SmsConfigStore.load(context)) }
+    var ruleEnabled by remember { mutableStateOf(config.ruleEnabled) }
     var destination by remember { mutableStateOf(config.destination) }
     var senders by remember { mutableStateOf(config.allowedSenders.joinToString("\n")) }
     var includes by remember { mutableStateOf(config.includeKeywords.joinToString("\n")) }
@@ -57,17 +58,19 @@ private fun OtpForwarderScreen() {
             permissionGranted(Manifest.permission.SEND_SMS)
     }
 
-    fun saveSettings(enable: Boolean = config.enabled) {
+    fun saveSettings(enable: Boolean = config.enabled, rule: Boolean = ruleEnabled) {
         val updated = SmsConfig(
             enabled = enable,
+            ruleEnabled = rule,
             destination = destination.trim(),
             allowedSenders = senders.lines().map { it.trim() }.filter { it.isNotBlank() }.distinct(),
             includeKeywords = includes.lines().map { it.trim() }.filter { it.isNotBlank() }.distinct(),
             excludeKeywords = excludes.lines().map { it.trim() }.filter { it.isNotBlank() }.distinct()
         )
-        val validation = if (enable) SmsConfigStore.validate(updated) else null
+        val validation = if (enable && rule) SmsConfigStore.validate(updated) else null
         if (validation != null) {
             savedMessage = validation
+            ruleEnabled = config.ruleEnabled
             return
         }
         try {
@@ -114,6 +117,21 @@ private fun OtpForwarderScreen() {
                             checked = config.enabled,
                             onCheckedChange = { enabled ->
                                 saveSettings(enable = enabled)
+                            },
+                            enabled = permissionsOk
+                        )
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("OTP filter rule", fontWeight = FontWeight.SemiBold)
+                            Text("Pause this rule without changing the master switch.",
+                                style = MaterialTheme.typography.bodySmall)
+                        }
+                        Switch(
+                            checked = ruleEnabled,
+                            onCheckedChange = { enabled ->
+                                ruleEnabled = enabled
+                                saveSettings(rule = enabled)
                             },
                             enabled = permissionsOk
                         )
