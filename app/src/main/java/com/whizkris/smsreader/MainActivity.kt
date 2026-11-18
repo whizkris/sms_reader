@@ -190,7 +190,6 @@ private fun OtpForwarderApp() {
                                     else persist(config.copy(rules = config.rules.map { if (it.id == rule.id) changed else it }))
                                 }
                             },
-                            },
                             onEdit = { editingRule = rule },
                             onDelete = {
                                 persist(config.copy(rules = config.rules.filterNot { it.id == rule.id }))
