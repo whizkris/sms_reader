@@ -219,6 +219,7 @@ private fun OtpForwarderApp() {
     }
 
     if (creatingRule || editingRule != null) {
+        MaterialTheme(colorScheme = darkColorScheme()) {
         RuleEditorDialog(
             initial = editingRule ?: SmsRule(name = "Rule ${config.rules.size + 1}"),
             onDismiss = { creatingRule = false; editingRule = null },
@@ -231,6 +232,7 @@ private fun OtpForwarderApp() {
                 editingRule = null
             }
         )
+        }
     }
 
     LaunchedEffect(Unit) {
@@ -251,8 +253,8 @@ private fun RuleCard(rule: SmsRule, onToggle: (Boolean) -> Unit, onEdit: () -> U
                 }
                 Switch(checked = rule.enabled, onCheckedChange = onToggle)
             }
-            val sender = rule.senderPatterns.takeIf { it.isNotEmpty() }?.joinToString(", ") ?: "Any sender"
-            val body = rule.bodyKeywords.takeIf { it.isNotEmpty() }?.joinToString(", ") ?: "Any body"
+            val sender = rule.senderPatterns.takeIf { it.isNotEmpty() }?.joinToString(", ") ?: "not set"
+            val body = rule.bodyKeywords.takeIf { it.isNotEmpty() }?.joinToString(", ") ?: "not set"
             Text("MATCH: sender [$sender] OR body [$body]", style = MaterialTheme.typography.bodySmall)
             if (rule.excludeKeywords.isNotEmpty())
                 Text("EXCLUDE: ${rule.excludeKeywords.joinToString(", ")}", style = MaterialTheme.typography.bodySmall)
@@ -285,7 +287,7 @@ private fun RuleEditorDialog(initial: SmsRule, onDismiss: () -> Unit, onSave: (S
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (initial.name == "New rule") "Create rule" else "Configure rule") },
+        title = { Text("Rule settings") },
         text = {
             Column(
                 Modifier.fillMaxWidth().heightIn(max = 560.dp).verticalScroll(rememberScrollState()),
