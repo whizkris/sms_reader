@@ -59,7 +59,7 @@ private fun OtpForwarderApp() {
             config = updated
             message = "Settings saved on this device."
         } catch (e: Exception) {
-            message = "Could not save settings: \${e.message ?: "unknown error"}"
+            message = "Could not save settings: ${e.message ?: "unknown error"}"
         }
     }
 
@@ -135,8 +135,8 @@ private fun OtpForwarderApp() {
                             Switch(checked = config.enabled, onCheckedChange = ::setMaster)
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            AssistChip(onClick = {}, label = { Text("\${config.rules.size} total rules") })
-                            AssistChip(onClick = {}, label = { Text("\${config.rules.count { it.enabled }} enabled") })
+                            AssistChip(onClick = {}, label = { Text("${config.rules.size} total rules") })
+                            AssistChip(onClick = {}, label = { Text("${config.rules.count { it.enabled }} enabled") })
                         }
                         if (!receiveGranted || (config.enabled && config.rules.any { it.enabled && it.sendSms } && !sendGranted)) {
                             Text("Permissions needed to run the active actions.", color = MaterialTheme.colorScheme.error,
@@ -203,7 +203,7 @@ private fun OtpForwarderApp() {
                     history.take(20).forEach { event ->
                         ListItem(
                             headlineContent = { Text(event.ruleName, fontWeight = FontWeight.SemiBold) },
-                            supportingContent = { Text("\${event.sender} • \${event.status}") },
+                            supportingContent = { Text("${event.sender} • ${event.status}") },
                             trailingContent = { Text(SmsConfigStore.formatTime(event.timestamp), style = MaterialTheme.typography.labelSmall) }
                         )
                         HorizontalDivider()
@@ -220,7 +220,7 @@ private fun OtpForwarderApp() {
 
     if (creatingRule || editingRule != null) {
         RuleEditorDialog(
-            initial = editingRule ?: SmsRule(name = "Rule \${config.rules.size + 1}"),
+            initial = editingRule ?: SmsRule(name = "Rule ${config.rules.size + 1}"),
             onDismiss = { creatingRule = false; editingRule = null },
             onSave = { rule ->
                 val updatedRules = if (config.rules.any { it.id == rule.id })
@@ -255,9 +255,9 @@ private fun RuleCard(rule: SmsRule, onToggle: (Boolean) -> Unit, onEdit: () -> U
             val body = rule.bodyKeywords.takeIf { it.isNotEmpty() }?.joinToString(", ") ?: "Any body"
             Text("MATCH: sender [$sender] OR body [$body]", style = MaterialTheme.typography.bodySmall)
             if (rule.excludeKeywords.isNotEmpty())
-                Text("EXCLUDE: \${rule.excludeKeywords.joinToString(", ")}", style = MaterialTheme.typography.bodySmall)
+                Text("EXCLUDE: ${rule.excludeKeywords.joinToString(", ")}", style = MaterialTheme.typography.bodySmall)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (rule.sendSms) AssistChip(onClick = {}, label = { Text("SMS • \${rule.smsDestinations.size} destination(s)") })
+                if (rule.sendSms) AssistChip(onClick = {}, label = { Text("SMS • ${rule.smsDestinations.size} destination(s)") })
                 if (rule.sendWebhook) AssistChip(onClick = {}, label = { Text("Webhook") })
             }
             Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
@@ -280,7 +280,7 @@ private fun RuleEditorDialog(initial: SmsRule, onDismiss: () -> Unit, onSave: (S
     var destinations by remember(initial.id) { mutableStateOf(initial.smsDestinations.joinToString("\n")) }
     var sendWebhook by remember(initial.id) { mutableStateOf(initial.sendWebhook) }
     var webhookUrl by remember(initial.id) { mutableStateOf(initial.webhookUrl) }
-    var headers by remember(initial.id) { mutableStateOf(initial.webhookHeaders.entries.joinToString("\n") { "\${it.key}: \${it.value}" }) }
+    var headers by remember(initial.id) { mutableStateOf(initial.webhookHeaders.entries.joinToString("\n") { "${it.key}: ${it.value}" }) }
     var error by remember(initial.id) { mutableStateOf<String?>(null) }
 
     AlertDialog(
