@@ -17,6 +17,7 @@ import javax.crypto.spec.GCMParameterSpec
 
 data class SmsConfig(
     val enabled: Boolean = false,
+    val ruleEnabled: Boolean = true,
     val destination: String = "",
     val allowedSenders: List<String> = emptyList(),
     val includeKeywords: List<String> = emptyList(),
@@ -40,6 +41,7 @@ object SmsConfigStore {
             val json = JSONObject(decrypt(encoded))
             SmsConfig(
                 enabled = json.optBoolean("enabled", false),
+                ruleEnabled = json.optBoolean("ruleEnabled", true),
                 destination = json.optString("destination", ""),
                 allowedSenders = json.optJSONArray("senders").toStringList(),
                 includeKeywords = json.optJSONArray("include").toStringList(),
@@ -53,6 +55,7 @@ object SmsConfigStore {
     fun save(context: Context, config: SmsConfig) {
         val json = JSONObject()
             .put("enabled", config.enabled)
+            .put("ruleEnabled", config.ruleEnabled)
             .put("destination", config.destination)
             .put("senders", JSONArray(config.allowedSenders))
             .put("include", JSONArray(config.includeKeywords))
