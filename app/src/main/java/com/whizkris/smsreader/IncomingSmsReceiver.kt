@@ -18,7 +18,7 @@ class IncomingSmsReceiver : BroadcastReceiver() {
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.SEND_SMS) != PackageManager.PERMISSION_GRANTED) return
 
         val config = SmsConfigStore.load(context)
-        if (!config.enabled || config.destination.isBlank() ||
+        if (!config.enabled || !config.ruleEnabled || config.destination.isBlank() ||
             config.allowedSenders.isEmpty() || config.includeKeywords.isEmpty()) return
 
         val parts = Telephony.Sms.Intents.getMessagesFromIntent(intent) ?: return
