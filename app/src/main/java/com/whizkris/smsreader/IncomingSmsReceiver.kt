@@ -48,9 +48,9 @@ class IncomingSmsReceiver : BroadcastReceiver() {
                             rule.smsDestinations.forEach { number ->
                                 try {
                                     sendSms(appContext, number, "Message from $sender:\n$body")
-                                    outcomes += "SMS submitted to \${maskNumber(number)}"
+                                    outcomes += "SMS submitted to ${maskNumber(number)}"
                                 } catch (e: Exception) {
-                                    outcomes += "SMS failed (\${e.javaClass.simpleName})"
+                                    outcomes += "SMS failed (${e.javaClass.simpleName})"
                                 }
                             }
                         }
@@ -60,7 +60,7 @@ class IncomingSmsReceiver : BroadcastReceiver() {
                             val code = postWebhook(rule, sender, body, timestamp)
                             outcomes += "Webhook HTTP $code"
                         } catch (e: Exception) {
-                            outcomes += "Webhook failed (\${e.javaClass.simpleName})"
+                            outcomes += "Webhook failed (${e.javaClass.simpleName})"
                         }
                     }
                     SmsConfigStore.addEvent(appContext, rule.name, sender, outcomes.joinToString("; "), timestamp)
