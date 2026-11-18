@@ -23,6 +23,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 
@@ -178,10 +180,16 @@ private fun OtpForwarderApp() {
                         RuleCard(
                             rule = rule,
                             onToggle = { enabled ->
-                                val changed = rule.copy(enabled = enabled)
-                                val error = if (enabled) SmsConfigStore.validate(changed) else null
-                                if (error != null) message = error
-                                else persist(config.copy(rules = config.rules.map { if (it.id == rule.id) changed else it }))
+                                if (enabled && config.enabled && rule.sendSms && !sendGranted) {
+                                    message = "Allow SMS sending before activating this rule."
+                                    permissionLauncher.launch(arrayOf(Manifest.permission.SEND_SMS))
+                                } else {
+                                    val changed = rule.copy(enabled = enabled)
+                                    val error = if (enabled) SmsConfigStore.validate(changed) else null
+                                    if (error != null) message = error
+                                    else persist(config.copy(rules = config.rules.map { if (it.id == rule.id) changed else it }))
+                                }
+                            },
                             },
                             onEdit = { editingRule = rule },
                             onDelete = {
@@ -283,6 +291,7 @@ private fun RuleEditorDialog(initial: SmsRule, onDismiss: () -> Unit, onSave: (S
     var sendWebhook by remember(initial.id) { mutableStateOf(initial.sendWebhook) }
     var webhookUrl by remember(initial.id) { mutableStateOf(initial.webhookUrl) }
     var headers by remember(initial.id) { mutableStateOf(initial.webhookHeaders.entries.joinToString("\n") { "${it.key}: ${it.value}" }) }
+    var showHeaders by remember(initial.id) { mutableStateOf(false) }
     var error by remember(initial.id) { mutableStateOf<String?>(null) }
 
     AlertDialog(
@@ -332,7 +341,11 @@ private fun RuleEditorDialog(initial: SmsRule, onDismiss: () -> Unit, onSave: (S
                     Text("Custom headers (one per line, Name: Value). Values are encrypted on this device.",
                         style = MaterialTheme.typography.bodySmall)
                     OutlinedTextField(headers, { headers = it }, modifier = Modifier.fillMaxWidth(), minLines = 2,
+                        visualTransformation = if (showHeaders) VisualTransformation.None else PasswordVisualTransformation(),
                         placeholder = { Text("Authorization: Bearer your-secret\\nX-API-Key: your-key") })
+                    TextButton(onClick = { showHeaders = !showHeaders }) {
+                        Text(if (showHeaders) "Hide header values" else "Show header values")
+                    }
                 }
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
             }
